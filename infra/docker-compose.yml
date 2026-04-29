@@ -1,0 +1,51 @@
+services:
+  redis:
+    image: redis:7
+    ports:
+      - "6379:6379"
+
+  qdrant:
+    image: qdrant/qdrant:v1.13.2
+    ports:
+      - "6333:6333"
+    volumes:
+      - qdrant_storage:/qdrant/storage
+
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: avatar
+      POSTGRES_PASSWORD: avatar
+      POSTGRES_DB: avatar
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+
+  bot:
+    image: python:3.11-slim
+    working_dir: /workspace
+    env_file:
+      - ../.env
+    volumes:
+      - ../:/workspace
+    command: sh -c "pip install -r app/requirements.txt && python -m app.main"
+    depends_on:
+      - redis
+      - qdrant
+      - postgres
+
+  worker:
+    image: python:3.11-slim
+    working_dir: /workspace
+    env_file:
+      - ../.env
+    volumes:
+      - ../:/workspace
+    command: sh -c "pip install -r app/requirements.txt && celery -A app.workers.tasks.celery_app worker --loglevel=info"
+    depends_on:
+      - redis
+
+volumes:
+  qdrant_storage:
+  pg_data:

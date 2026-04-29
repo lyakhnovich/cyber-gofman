@@ -1,0 +1,14 @@
+﻿aiogram==3.6.0
+python-dotenv==1.0.1
+qdrant-client==1.9.1
+sentence-transformers==2.7.0
+faster-whisper==1.0.3
+yt-dlp
+openai==1.82.0
+redis==5.0.4
+celery==5.4.0
+ffmpeg-python==0.2.0
+numpy==1.26.4
+librosa==0.10.2.post1
+soundfile==0.12.1
+pyttsx3==2.90

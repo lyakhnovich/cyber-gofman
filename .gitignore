@@ -1,0 +1,27 @@
+# Secrets
+.env
+
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+*.egg-info/
+.ruff_cache/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Heavy / generated media (restore locally after clone; see README)
+app/data/outputs/*
+!app/data/outputs/.gitkeep
+app/data/raw_videos/*
+!app/data/raw_videos/.gitkeep
+app/data/transcripts/*
+!app/data/transcripts/.gitkeep
+app/data/reference.wav
+app/data/reference_face.mp4
+app/data/reference_circle.mp4
