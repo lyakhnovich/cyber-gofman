@@ -1,4 +1,4 @@
-﻿# Cyber Gofman Avatar Bot (Stage 1/2 bridge)
+﻿# Cyber Gofman Bot (Stage 1/2 bridge)
 
 Current stack:
 - Retrieval-based text responses (offline)
