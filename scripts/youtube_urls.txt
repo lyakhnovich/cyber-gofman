@@ -1,0 +1,7 @@
+# One YouTube URL per line.
+# Video URL or playlist URL are both supported.
+# Example:
+# https://www.youtube.com/watch?v=XXXXXXXXXXX
+
+https://www.youtube.com/watch?v=0Tc-YxekPeg
+https://www.youtube.com/watch?v=emzTaM_S5qA

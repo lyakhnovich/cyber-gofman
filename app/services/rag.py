@@ -58,8 +58,7 @@ class RagService:
             if i == 0 and len(base) % 3 == 0 and not base.lower().startswith(marker):
                 base = f"{marker.capitalize()}, {base[0].lower() + base[1:]}" if len(base) > 1 else f"{marker.capitalize()}, {base.lower()}"
             base = re.sub(r"\s+и\s+", " и одновременно ", base, count=1, flags=re.IGNORECASE)
-            # Alternate endings for more natural variability.
-            ending = "..." if (len(base) + i) % 2 == 0 else ", понимаешь..."
+            ending = "..."
             styled.append(f"{base}{ending}")
         return " ".join(styled) if styled else s
 

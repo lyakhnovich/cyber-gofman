@@ -8,6 +8,8 @@ def main() -> None:
     # Before any import that may load huggingface_hub (e.g. sentence-transformers).
     # Avoids redirects to cas-bridge.xethub.hf.co when that host does not resolve.
     os.environ.setdefault("HF_HUB_DISABLE_XET", "1")
+    # Work around Windows TorchCodec DLL issues in torchaudio-dependent stacks.
+    os.environ.setdefault("TORCHAUDIO_USE_TORCHCODEC", "0")
     from app.services.bot import run
 
     asyncio.run(run())
