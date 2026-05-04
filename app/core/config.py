@@ -2,6 +2,10 @@
 from os import getenv
 
 
+def _env_bool(name: str, default: str = "false") -> bool:
+    return getenv(name, default).strip().lower() in ("1", "true", "yes", "on")
+
+
 @dataclass
 class Settings:
     telegram_bot_token: str = getenv("TELEGRAM_BOT_TOKEN", "")
@@ -22,6 +26,11 @@ class Settings:
     fallback_clip_seconds: float = float(getenv("FALLBACK_CLIP_SECONDS", "1.8"))
     wav2lip_repo_path: str = getenv("WAV2LIP_REPO_PATH", "")
     wav2lip_checkpoint_path: str = getenv("WAV2LIP_CHECKPOINT_PATH", "")
+    # Local QLoRA (Qwen + PEFT adapter). See README.
+    local_llm_enabled: bool = _env_bool("LOCAL_LLM_ENABLED", "true")
+    local_llm_base_model: str = getenv("LOCAL_LLM_BASE_MODEL", "Qwen/Qwen2.5-7B-Instruct")
+    local_llm_adapter_path: str = getenv("LOCAL_LLM_ADAPTER_PATH", "app/data/models/igor-lora/adapter")
+    local_llm_max_new_tokens: int = int(getenv("LOCAL_LLM_MAX_NEW_TOKENS", "240"))
 
 
 settings = Settings()

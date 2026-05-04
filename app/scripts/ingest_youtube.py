@@ -1,6 +1,7 @@
 ﻿import json
 import subprocess
 import sys
+import re
 from pathlib import Path
 
 import librosa
@@ -57,6 +58,18 @@ def download_from_youtube(url: str) -> list[Path]:
         url,
     ]
     subprocess.run(cmd, check=True)
+
+    # Prefer exact file match by YouTube video id (works for "already downloaded" too).
+    m = re.search(r"(?:v=|youtu\.be/)([A-Za-z0-9_-]{11})", url)
+    if m:
+        yt_id = m.group(1)
+        exact = sorted(
+            RAW_DIR.glob(f"*__{yt_id}.mp4"),
+            key=lambda p: p.stat().st_mtime,
+            reverse=True,
+        )
+        if exact:
+            return [exact[0]]
 
     after = sorted(RAW_DIR.glob("*.mp4"), key=lambda p: p.stat().st_mtime, reverse=True)
     new_files = [p for p in after if p.name not in before]
@@ -186,15 +199,20 @@ def main() -> None:
 
     for url in urls:
         videos = download_from_youtube(url)[: args.max_per_url]
+        print(f"SOURCE: {url} -> {len(videos)} video(s) selected", flush=True)
         for video in videos:
             try:
+                print(f"TRANSCRIBE_START: {video.name}", flush=True)
                 transcript = transcribe(video, whisper, speaker_filter=speaker_filter)
+                print(f"TRANSCRIBE_DONE: {transcript.name}", flush=True)
             except RuntimeError as exc:
                 if "cublas64_12.dll" not in str(exc):
                     raise
                 print("CUDA runtime not found, retrying transcription on CPU...")
                 whisper = WhisperModel(args.model, device="cpu", compute_type="int8")
+                print(f"TRANSCRIBE_START_CPU: {video.name}", flush=True)
                 transcript = transcribe(video, whisper, speaker_filter=speaker_filter)
+                print(f"TRANSCRIBE_DONE_CPU: {transcript.name}", flush=True)
             chunks = chunk_transcript(transcript)
             upserted = store.upsert_chunks(chunks)
             total_videos += 1

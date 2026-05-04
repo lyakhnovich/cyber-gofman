@@ -20,6 +20,8 @@ video_profiles = load_video_profiles()
 PIXEL_ON_CB = "pixel_on"
 PIXEL_OFF_CB = "pixel_off"
 ABOUT_CB = "about"
+TEXT_MODE_CB = "mode_text"
+VIDEO_MODE_CB = "mode_video"
 
 
 
@@ -61,6 +63,10 @@ def _main_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
+                InlineKeyboardButton(text="Текстом", callback_data=TEXT_MODE_CB),
+                InlineKeyboardButton(text="Видео", callback_data=VIDEO_MODE_CB),
+            ],
+            [
                 InlineKeyboardButton(text="Pixel on", callback_data=PIXEL_ON_CB),
                 InlineKeyboardButton(text="Pixel off", callback_data=PIXEL_OFF_CB),
             ],
@@ -87,11 +93,11 @@ def _pick_video_profile(uid: int, reset: bool = False) -> dict | None:
 @dp.message(CommandStart())
 async def start_handler(message: Message) -> None:
     uid = message.from_user.id
-    user_modes[uid] = "video"
+    user_modes[uid] = "text"
     user_pixel_mode[uid] = False
     _pick_video_profile(uid, reset=True)
     await message.answer(
-        "Игорь Гофман на связи. По умолчанию отвечаю кругляшами.",
+        "Игорь Гофман на связи. По умолчанию отвечаю текстом; кругляшки — кнопка «Видео».",
         reply_markup=_main_keyboard(),
     )
 
@@ -132,6 +138,22 @@ async def about_handler(callback: CallbackQuery) -> None:
     await callback.message.answer(random.choice(variants))
 
 
+@dp.callback_query(F.data == TEXT_MODE_CB)
+async def text_mode_button_handler(callback: CallbackQuery) -> None:
+    uid = callback.from_user.id
+    user_modes[uid] = "text"
+    await callback.answer("Режим: text")
+    await callback.message.answer("Переключил в текстовый режим. Теперь отвечаю текстом быстрее.")
+
+
+@dp.callback_query(F.data == VIDEO_MODE_CB)
+async def video_mode_button_handler(callback: CallbackQuery) -> None:
+    uid = callback.from_user.id
+    user_modes[uid] = "video"
+    await callback.answer("Режим: video")
+    await callback.message.answer("Переключил в видео-режим. Снова отвечаю кругляшами.")
+
+
 @dp.callback_query(F.data.in_({PIXEL_ON_CB, PIXEL_OFF_CB}))
 async def quick_buttons_handler(callback: CallbackQuery) -> None:
     uid = callback.from_user.id
@@ -143,13 +165,13 @@ async def quick_buttons_handler(callback: CallbackQuery) -> None:
 @dp.message(F.text)
 async def text_handler(message: Message) -> None:
     uid = message.from_user.id
-    mode = user_modes.get(uid, "video")
+    mode = user_modes.get(uid, "text")
     loading_msg: Message | None = None
     loading_task: asyncio.Task | None = None
     if mode == "video":
         loading_msg, loading_task = await _start_loading(message, base_text="Игорь Гофман думает")
     try:
-        answer = await asyncio.to_thread(get_rag().answer, message.text, mode)
+        answer = await asyncio.to_thread(get_rag().answer, message.text, mode, uid)
     except Exception:
         await _stop_loading(loading_msg, loading_task)
         raise

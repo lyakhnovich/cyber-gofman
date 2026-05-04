@@ -3,11 +3,13 @@ import subprocess
 import sys
 import uuid
 import json
+from datetime import datetime
 from pathlib import Path
 
 from app.core.config import settings
 
 OUT_DIR = Path("app/data/outputs")
+WAV2LIP_LOG_DIR = OUT_DIR / "wav2lip_logs"
 _XTTS = None
 _COQUI_DOWNLOAD_PATCHED = False
 
@@ -270,6 +272,68 @@ def _get_xtts():
     return _XTTS
 
 
+def _xtts_max_input_tokens(tts) -> int:
+    """XTTS asserts len(token_ids) < gpt_max_text_tokens (default 402)."""
+    try:
+        tm = tts.synthesizer.tts_model
+        return max(1, int(getattr(tm.args, "gpt_max_text_tokens", 402)) - 1)
+    except Exception:
+        return 399
+
+
+def _xtts_num_tokens(tts, fragment: str, language: str) -> int:
+    lang = (language or "en").split("-")[0]
+    tm = tts.synthesizer.tts_model
+    return len(tm.tokenizer.encode(fragment, lang=lang))
+
+
+def _truncate_xtts_fragment(tts, fragment: str, language: str) -> str:
+    """One synthesis segment must stay under XTTS token cap (inference lowercases per sentence)."""
+    fragment = fragment.strip()
+    if not fragment:
+        return fragment
+    max_tok = _xtts_max_input_tokens(tts)
+    if _xtts_num_tokens(tts, fragment, language) <= max_tok:
+        return fragment
+    lo, hi = 1, len(fragment)
+    best = ""
+    while lo <= hi:
+        mid = (lo + hi) // 2
+        cand = fragment[:mid].strip()
+        if not cand:
+            hi = mid - 1
+            continue
+        if _xtts_num_tokens(tts, cand, language) <= max_tok:
+            best = cand
+            lo = mid + 1
+        else:
+            hi = mid - 1
+    if not best:
+        return fragment[:80].rstrip() + "…"
+    trimmed = best.rstrip(" ,;:")
+    return trimmed + ("…" if trimmed != fragment else "")
+
+
+def _clip_text_for_xtts(tts, text: str) -> str:
+    """Shorten RAG/LLM replies so XTTS never hits the 400-token wall on a single segment."""
+    text = (text or "").strip()
+    if not text:
+        return text
+    language = settings.xtts_language
+    try:
+        sentences = tts.synthesizer.split_into_sentences(text)
+    except Exception:
+        sentences = [text]
+    if not sentences:
+        return text
+    parts: list[str] = []
+    for sent in sentences:
+        s = sent.strip()
+        if s:
+            parts.append(_truncate_xtts_fragment(tts, s, language))
+    return " ".join(p for p in parts if p).strip()
+
+
 def _tts_to_wav(text: str, wav_path: Path) -> None:
     reference_wav = Path(settings.reference_voice_path)
     if not reference_wav.exists():
@@ -277,6 +341,7 @@ def _tts_to_wav(text: str, wav_path: Path) -> None:
 
     try:
         tts = _get_xtts()
+        text = _clip_text_for_xtts(tts, text)
         tts.tts_to_file(
             text=text,
             file_path=str(wav_path),
@@ -366,12 +431,60 @@ def _run_wav2lip(face_video: Path, wav_audio: Path, out_video: Path, profile: di
     ffmpeg_bin = str(Path(ffmpeg).parent)
     env["PATH"] = ffmpeg_bin + os.pathsep + env.get("PATH", "")
     env.setdefault("TORCHAUDIO_USE_TORCHCODEC", "0")
+    def _run_cmd_with_log(cmd: list[str], attempt_name: str) -> None:
+        proc = subprocess.run(
+            cmd,
+            check=False,
+            cwd=str(repo),
+            env=env,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
+        if proc.returncode == 0:
+            return
+
+        WAV2LIP_LOG_DIR.mkdir(parents=True, exist_ok=True)
+        stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        log_path = WAV2LIP_LOG_DIR / f"wav2lip_{stamp}_{uuid.uuid4().hex[:8]}.log"
+        log_path.write_text(
+            "\n".join(
+                [
+                    f"attempt={attempt_name}",
+                    f"returncode={proc.returncode}",
+                    f"cwd={repo}",
+                    "command=" + " ".join(cmd),
+                    "",
+                    "----- stdout -----",
+                    proc.stdout or "<empty>",
+                    "",
+                    "----- stderr -----",
+                    proc.stderr or "<empty>",
+                    "",
+                ]
+            ),
+            encoding="utf-8",
+        )
+        # Keep full primary traceback visible in terminal logs as requested.
+        print(
+            f"[Wav2Lip:{attempt_name}] failed with code {proc.returncode}. "
+            f"Full log: {log_path}",
+            file=sys.stderr,
+        )
+        if proc.stderr:
+            print(proc.stderr, file=sys.stderr)
+        raise RuntimeError(
+            f"Wav2Lip {attempt_name} failed (code {proc.returncode}). "
+            f"See log: {log_path}"
+        )
+
     try:
-        subprocess.run(base_cmd, check=True, cwd=str(repo), env=env)
-    except subprocess.CalledProcessError:
-        # Fallback retry for unstable frame-by-frame detection on noisy clips.
+        _run_cmd_with_log(base_cmd, "default")
+    except RuntimeError:
+        # Retry with static face for unstable frame-by-frame detection on noisy clips.
         static_cmd = base_cmd + ["--static", "True"]
-        subprocess.run(static_cmd, check=True, cwd=str(repo), env=env)
+        _run_cmd_with_log(static_cmd, "static")
 
 
 def _postprocess_video_note(src: Path, dst: Path, pixel_mode: bool) -> None:
@@ -542,17 +655,8 @@ def generate_video_note(text: str, user_id: int, pixel_mode: bool = False, profi
 
     try:
         _run_wav2lip(prepared_face, wav_path, lip_path, profile=selected)
-    except Exception as exc:
-        msg = str(exc).lower()
-        fallback_markers = (
-            "torchcodec",
-            "libtorchcodec",
-            "wav2lip inference script not found",
-            "wav2lip is not configured",
-        )
-        if not any(marker in msg for marker in fallback_markers):
-            raise
-        # Keep feature usable even if Wav2Lip is not configured or local codec stack is broken.
+    except Exception:
+        # Keep feature usable even if Wav2Lip/codec stack fails on a specific clip.
         _compose_fallback_video_with_audio(reference_video, wav_path, lip_path, profile=selected)
     _postprocess_video_note(lip_path, out_path, pixel_mode=pixel_mode)
     return out_path

@@ -25,3 +25,6 @@ app/data/transcripts/*
 app/data/reference.wav
 app/data/reference_face.mp4
 app/data/reference_circle.mp4
+
+# Trained adapters / checkpoints (large binaries; regenerate with train_lora_sft)
+app/data/models/
